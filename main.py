@@ -67,14 +67,16 @@ async def monitor_tiktok(target: dict) -> None:
 
     log.info(f"[TikTok] 👁️ WebSocket en attente pour {label}")
 
-    async def on_live_start(stream_url: str):
+    async def _do_record(stream_url: str):
         if key in _recording_active:
             return
         _recording_active.add(key)
         await send_notification(
             f"🔴 <b>LIVE DÉTECTÉ !</b>\n"
-            f"👤 {label}\n"
-            f"🎬 Recording lancé instantanément..."
+            f"{'─' * 28}\n"
+            f"👤  {label}\n"
+            f"📡  Recording lancé instantanément ⚡\n"
+            f"{'─' * 28}"
         )
         await record_stream(
             stream_url=stream_url,
@@ -84,7 +86,14 @@ async def monitor_tiktok(target: dict) -> None:
         )
         _recording_active.discard(key)
 
-    await tiktok_monitor.watch_and_notify(username, on_live_start)
+    # ── Check immédiat : déjà en live au moment où on ajoute le target ? ──
+    already_live = await tiktok_monitor.is_live(username)
+    if already_live:
+        log.info(f"[TikTok] ⚡ Déjà en live à l'ajout — recording immédiat : {label}")
+        asyncio.create_task(_do_record(tiktok_monitor.get_stream_url(username)))
+
+    # ── WebSocket — attend les prochains lives ─────────────────────────────
+    await tiktok_monitor.watch_and_notify(username, _do_record)
 
 
 # ─── INSTAGRAM — Polling 10s (meilleur possible sans WebSocket public) ─────────
