@@ -32,19 +32,26 @@ def get_active() -> dict[str, asyncio.subprocess.Process]:
 
 async def stop_recording(key: str) -> bool:
     """
-    Coupe proprement un recording en cours via son key (platform:username).
-    Le fichier déjà capturé est uploadé normalement via on_complete.
+    Coupe proprement un recording en cours.
+    Attend jusqu'à 5s que le process soit enregistré (race condition fix).
     Returns True si un process a été killé.
     """
+    # Attend max 5s que le process apparaisse (peut être en train de démarrer)
+    for _ in range(10):
+        if key in _active_procs:
+            break
+        await asyncio.sleep(0.5)
+
     proc = _active_procs.get(key)
     if proc is None:
         return False
+
     log.info(f"[Recorder] 🛑 Stop manuel : {key}")
     try:
         proc.terminate()  # SIGTERM → streamlink flush le fichier proprement
         await asyncio.sleep(2)
         if proc.returncode is None:
-            proc.kill()   # SIGKILL si toujours vivant
+            proc.kill()
     except Exception as e:
         log.warning(f"[Recorder] Erreur stop : {e}")
     return True

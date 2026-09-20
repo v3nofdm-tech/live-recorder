@@ -248,7 +248,7 @@ async def _cmd_stop(chat_id: int, args: list[str]) -> None:
     if len(args) == 2:
         key = f"{args[0].lower()}:{args[1].lower()}"
 
-    mid = await _send_and_get_id(chat_id, f"⏳ <b>Arrêt du recording...</b>")
+    mid = await _send_and_get_id(chat_id, f"⏳ <b>Arrêt du recording...</b>\n<i>Patiente jusqu'à 5s</i>")
     ok  = await rec_module.stop_recording(key)
     plat, user = key.split(":", 1) if ":" in key else ("?", key)
     emoji = "🎵" if plat == "tiktok" else "📸"
