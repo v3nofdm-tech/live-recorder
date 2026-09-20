@@ -36,15 +36,26 @@ _recording_active: set[str] = set()
 
 
 async def on_recording_complete(filepath: str, label: str) -> None:
-    ts = datetime.now().strftime("%d/%m/%Y %H:%M")
-    caption = (
-        f"🎬 <b>Live enregistré !</b>\n"
-        f"👤 {label}\n"
-        f"🕐 {ts}\n"
-        f"✅ Recording complet de A à Z"
+    import os
+    from pathlib import Path
+    ts       = datetime.now().strftime("%d/%m/%Y à %H:%M")
+    size_mb  = Path(filepath).stat().st_size / 1024 / 1024 if Path(filepath).exists() else 0
+    caption  = (
+        f"🎬 <b>Live archivé !</b>\n"
+        f"{'─' * 28}\n"
+        f"👤  {label}\n"
+        f"📅  {ts}\n"
+        f"💾  {size_mb:.1f} MB\n"
+        f"{'─' * 28}\n"
+        f"✅ <i>Enregistrement complet de A à Z</i>"
     )
-    await send_notification(f"📤 Envoi du recording en cours : {label}")
+    await send_notification(
+        f"📤 <b>Upload en cours...</b>\n"
+        f"👤 {label}\n"
+        f"💾 {size_mb:.1f} MB — patience ⏳"
+    )
     await send_video(filepath, caption)
+    bot_commands.increment_done()
 
 
 # ─── TIKTOK — WebSocket instantané ────────────────────────────────────────────
@@ -134,6 +145,9 @@ async def main() -> None:
 
     # Vérification bot Telegram
     await resolve_channel_id()
+
+    # Injecte le state de recording dans bot_commands (pour /status)
+    bot_commands.inject_recording_state(_recording_active)
 
     # Charge les targets (config.py + targets.json si existant)
     targets_store.init()
