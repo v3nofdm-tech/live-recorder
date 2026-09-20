@@ -29,7 +29,8 @@ INSTAGRAM_PASSWORD = os.getenv("INSTAGRAM_PASSWORD", "")
 
 # ─── RECORDING ───────────────────────────────────────────────────────────────
 RECORDINGS_DIR     = os.getenv("RECORDINGS_DIR", "/tmp/recordings")
-POLL_INTERVAL_SEC  = int(os.getenv("POLL_INTERVAL_SEC", "60"))   # check toutes les 60s
+POLL_INTERVAL_SEC      = int(os.getenv("POLL_INTERVAL_SEC", "60"))   # Instagram poll (fallback)
+INSTA_POLL_INTERVAL    = int(os.getenv("INSTA_POLL_INTERVAL", "10"))  # Instagram: check toutes les 10s
 MAX_FILE_SIZE_MB   = 2000  # Telegram limite bot = 2GB avec local server, 50MB sinon
 
 # ─── QUALITY ─────────────────────────────────────────────────────────────────
