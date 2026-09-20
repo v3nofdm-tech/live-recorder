@@ -1,4 +1,4 @@
-TikTokLive==1.7.5
+TikTokLive==7.0.1
 instagrapi==2.1.3
 httpx==0.27.2
 streamlink==6.11.0
