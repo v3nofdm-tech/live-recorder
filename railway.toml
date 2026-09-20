@@ -1,0 +1,11 @@
+# Railway config
+[build]
+builder = "dockerfile"
+
+[deploy]
+startCommand = "python main.py"
+restartPolicyType = "always"          # restart automatique si crash
+healthcheckPath = ""                   # pas de HTTP server, c'est un worker
+
+[[services]]
+name = "live-recorder"

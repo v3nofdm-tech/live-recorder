@@ -1,0 +1,8 @@
+.env
+*.log
+recordings/
+/tmp/recordings/
+insta_session.json
+__pycache__/
+*.pyc
+.DS_Store
