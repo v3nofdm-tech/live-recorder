@@ -17,6 +17,7 @@ import httpx
 from datetime import datetime, timezone
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHANNEL
 import targets_store
+import recorder as rec_module
 
 log = logging.getLogger(__name__)
 BASE = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
@@ -223,6 +224,80 @@ async def _cmd_status(chat_id: int) -> None:
     await _send(chat_id, "\n".join(lines))
 
 
+async def _cmd_stop(chat_id: int, args: list[str]) -> None:
+    active = rec_module.get_active()
+
+    if not args:
+        if not active:
+            await _send(chat_id,
+                "ℹ️ <b>Aucun recording en cours</b>\n\n"
+                "Usage : <code>/stop tiktok:pseudo</code>\n"
+                "ou <code>/stopall</code> pour tout stopper"
+            )
+            return
+        lines = ["🎬 <b>Recordings en cours — lequel stopper ?</b>\n"]
+        for key in active:
+            plat, user = key.split(":", 1)
+            emoji = "🎵" if plat == "tiktok" else "📸"
+            lines.append(f"  • <code>/stop {key}</code>  {emoji} @{user}")
+        lines.append("\n<i>Copie-colle la commande pour stopper</i>")
+        await _send(chat_id, "\n".join(lines))
+        return
+
+    key = args[0].lower()
+    if len(args) == 2:
+        key = f"{args[0].lower()}:{args[1].lower()}"
+
+    mid = await _send_and_get_id(chat_id, f"⏳ <b>Arrêt du recording...</b>")
+    ok  = await rec_module.stop_recording(key)
+    plat, user = key.split(":", 1) if ":" in key else ("?", key)
+    emoji = "🎵" if plat == "tiktok" else "📸"
+
+    text = (
+        f"🛑 <b>Recording stoppé</b>\n"
+        f"{'─' * 28}\n"
+        f"{emoji}  <code>@{user}</code>\n"
+        f"📤  Upload en cours...\n"
+        f"{'─' * 28}\n"
+        f"<i>La vidéo arrive dans quelques instants</i>"
+    ) if ok else (
+        f"❌ <b>Aucun recording actif</b>\n"
+        f"{'─' * 28}\n"
+        f"<code>{key}</code> n'est pas en cours\n\n"
+        f"Tape /stop pour voir les recordings actifs"
+    )
+
+    if mid:
+        await _edit(chat_id, mid, text)
+    else:
+        await _send(chat_id, text)
+
+
+async def _cmd_stopall(chat_id: int) -> None:
+    active = rec_module.get_active()
+    if not active:
+        await _send(chat_id, "ℹ️ <b>Aucun recording en cours</b>")
+        return
+
+    mid = await _send_and_get_id(chat_id, f"⏳ <b>Arrêt de {len(active)} recording(s)...</b>")
+    stopped = []
+    for key in list(active.keys()):
+        if await rec_module.stop_recording(key):
+            stopped.append(key)
+
+    lines = [f"🛑 <b>{len(stopped)} recording(s) stoppés</b>", f"{'─' * 28}"]
+    for key in stopped:
+        plat, user = key.split(":", 1)
+        emoji = "🎵" if plat == "tiktok" else "📸"
+        lines.append(f"  {emoji} @{user}")
+    lines += [f"{'─' * 28}", "<i>Les vidéos arrivent sur le canal 📤</i>"]
+
+    if mid:
+        await _edit(chat_id, mid, "\n".join(lines))
+    else:
+        await _send(chat_id, "\n".join(lines))
+
+
 async def _cmd_help(chat_id: int) -> None:
     await _send(chat_id,
         "🤖 <b>LIVE RECORDER — Commandes</b>\n"
@@ -233,6 +308,9 @@ async def _cmd_help(chat_id: int) -> None:
         "➖ <b>Retirer un target</b>\n"
         "  /rmtt <code>[pseudo]</code>   — TikTok 🎵\n"
         "  /rmig <code>[pseudo]</code>   — Instagram 📸\n\n"
+        "🛑 <b>Stopper un recording</b>\n"
+        "  /stop <code>[platform:pseudo]</code>  — Stoppe + upload\n"
+        "  /stopall  — Stoppe tout\n\n"
         "📋 <b>Infos</b>\n"
         "  /list    — Tous les targets + statut live\n"
         "  /status  — État du bot (uptime, recordings)\n"
@@ -257,7 +335,6 @@ async def _handle_update(update: dict) -> None:
     if not text.startswith("/"):
         return
 
-    # Sécurité : seul le canal autorisé
     allowed = str(chat_id) == str(TELEGRAM_CHANNEL) or f"@{chat_user}" == TELEGRAM_CHANNEL
     if not allowed:
         log.warning(f"[Bot] Commande ignorée — chat non autorisé : {chat_id}")
@@ -292,6 +369,12 @@ async def _handle_update(update: dict) -> None:
             await _send(chat_id, "❌ Usage : <code>/rmig pseudo_instagram</code>")
         else:
             await _cmd_remove(chat_id, "instagram", args[0])
+
+    elif cmd == "/stop":
+        await _cmd_stop(chat_id, args)
+
+    elif cmd == "/stopall":
+        await _cmd_stopall(chat_id)
 
     elif cmd == "/list":
         await _cmd_list(chat_id)

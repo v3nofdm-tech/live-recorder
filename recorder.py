@@ -2,9 +2,8 @@
 Recorder 🎬
 Utilise streamlink + ffmpeg pour capturer un live de A à Z.
 Lance en subprocess, bloque jusqu'à la fin du live.
+Supporte /stop pour couper proprement et déclencher l'upload.
 """
-import os
-import subprocess
 import logging
 import asyncio
 from datetime import datetime
@@ -13,14 +12,42 @@ from config import RECORDINGS_DIR, STREAMLINK_QUALITY
 
 log = logging.getLogger(__name__)
 
+# Registry des process actifs : key → asyncio.subprocess.Process
+# key = "platform:username"
+_active_procs: dict[str, asyncio.subprocess.Process] = {}
+
 
 def _make_output_path(platform: str, username: str) -> Path:
     """Génère un chemin de fichier propre avec timestamp."""
     out_dir = Path(RECORDINGS_DIR)
     out_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{platform}_{username}_{ts}.mp4"
-    return out_dir / filename
+    return out_dir / f"{platform}_{username}_{ts}.mp4"
+
+
+def get_active() -> dict[str, asyncio.subprocess.Process]:
+    """Retourne les recordings en cours."""
+    return dict(_active_procs)
+
+
+async def stop_recording(key: str) -> bool:
+    """
+    Coupe proprement un recording en cours via son key (platform:username).
+    Le fichier déjà capturé est uploadé normalement via on_complete.
+    Returns True si un process a été killé.
+    """
+    proc = _active_procs.get(key)
+    if proc is None:
+        return False
+    log.info(f"[Recorder] 🛑 Stop manuel : {key}")
+    try:
+        proc.terminate()  # SIGTERM → streamlink flush le fichier proprement
+        await asyncio.sleep(2)
+        if proc.returncode is None:
+            proc.kill()   # SIGKILL si toujours vivant
+    except Exception as e:
+        log.warning(f"[Recorder] Erreur stop : {e}")
+    return True
 
 
 async def record_stream(
@@ -31,23 +58,18 @@ async def record_stream(
 ) -> None:
     """
     Lance streamlink pour recorder le live complet.
-    Appelle on_complete(filepath) quand le live se termine.
-    
-    Args:
-        stream_url: URL du live (tiktok page URL ou instagram dash URL)
-        platform: "tiktok" ou "instagram"
-        username: nom du user (pour le nom de fichier)
-        on_complete: callback async appelé avec le path du fichier fini
+    Appelle on_complete(filepath) quand le live se termine (naturellement ou via /stop).
     """
+    key         = f"{platform}:{username}"
     output_path = _make_output_path(platform, username)
     log.info(f"[Recorder] 🎬 Début recording {platform}/@{username} → {output_path}")
 
     cmd = [
         "streamlink",
-        "--retry-streams", "10",          # retry si stream coupe brièvement
-        "--retry-max", "999",              # on insiste, c'est un live
-        "--retry-open", "10",
-        "--hls-live-restart",              # reprend si HLS restart
+        "--retry-streams", "10",
+        "--retry-max",    "999",
+        "--retry-open",   "10",
+        "--hls-live-restart",
         "--output", str(output_path),
         stream_url,
         STREAMLINK_QUALITY,
@@ -59,8 +81,8 @@ async def record_stream(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        _active_procs[key] = proc
 
-        # Lit stderr en live pour les logs
         async def _drain_stderr():
             async for line in proc.stderr:
                 decoded = line.decode("utf-8", errors="replace").strip()
@@ -69,11 +91,14 @@ async def record_stream(
 
         await asyncio.gather(proc.wait(), _drain_stderr())
 
-        if output_path.exists() and output_path.stat().st_size > 0:
-            log.info(f"[Recorder] ✅ Recording terminé : {output_path} ({output_path.stat().st_size // 1024 // 1024}MB)")
-            await on_complete(str(output_path))
-        else:
-            log.warning(f"[Recorder] ⚠️ Fichier vide ou absent après recording : {output_path}")
-
     except Exception as e:
         log.error(f"[Recorder] Erreur recording : {e}")
+    finally:
+        _active_procs.pop(key, None)
+
+    if output_path.exists() and output_path.stat().st_size > 0:
+        size_mb = output_path.stat().st_size / 1024 / 1024
+        log.info(f"[Recorder] ✅ Recording terminé : {output_path} ({size_mb:.1f}MB)")
+        await on_complete(str(output_path))
+    else:
+        log.warning(f"[Recorder] ⚠️ Fichier vide ou absent : {output_path}")
