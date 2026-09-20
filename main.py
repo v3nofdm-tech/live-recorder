@@ -45,8 +45,9 @@ async def on_recording_complete(filepath: str, label: str) -> None:
 
 async def monitor_target(target: dict) -> None:
     """
-    Boucle de surveillance pour un target (plateforme + username).
-    Tourne en continu — détecte le live, lance le recording, attend la fin.
+    Boucle de surveillance pour un target.
+    TikTok → WebSocket instantané.
+    Instagram → polling 60s (API pas de websocket dispo).
     """
     platform = target["platform"]
     username = target["username"]
@@ -55,60 +56,58 @@ async def monitor_target(target: dict) -> None:
 
     log.info(f"[Monitor] 🚀 Surveillance démarrée pour {label}")
 
-    while True:
-        try:
+    if platform == "tiktok":
+        # ── WebSocket — zéro latence ───────────────────────────────────────
+        async def on_live_start(stream_url: str):
             if key in _recording_active:
-                # Déjà en recording, on attend
-                await asyncio.sleep(POLL_INTERVAL_SEC)
-                continue
-
-            # ── Détection live ─────────────────────────────────────────────
-            is_live   = False
-            stream_url = None
-
-            if platform == "tiktok":
-                is_live = await tiktok_monitor.is_live(username)
-                if is_live:
-                    stream_url = tiktok_monitor.get_stream_url(username)
-
-            elif platform == "instagram":
-                is_live, stream_url = insta_monitor.is_live(
-                    username,
-                    INSTAGRAM_USERNAME,
-                    INSTAGRAM_PASSWORD,
-                )
-
-            # ── Si live détecté ────────────────────────────────────────────
-            if is_live and stream_url:
-                log.info(f"[Monitor] 🔴 LIVE DÉTECTÉ : {label}")
-                _recording_active.add(key)
-
-                # Notif Telegram
-                await send_notification(
-                    f"🔴 <b>LIVE DÉTECTÉ !</b>\n"
-                    f"👤 {label}\n"
-                    f"🎬 Recording lancé..."
-                )
-
-                # Lance le recording (bloque jusqu'à la fin du live)
-                await record_stream(
-                    stream_url=stream_url,
-                    platform=platform,
-                    username=username,
-                    on_complete=lambda fp: on_recording_complete(fp, label),
-                )
-
-                _recording_active.discard(key)
-                log.info(f"[Monitor] ✅ Recording terminé pour {label} — reprise surveillance")
-
-            else:
-                log.debug(f"[Monitor] 💤 {label} — pas en live, retry dans {POLL_INTERVAL_SEC}s")
-
-        except Exception as e:
-            log.error(f"[Monitor] ❌ Erreur pour {label}: {e}", exc_info=True)
+                log.warning(f"[Monitor] Already recording {label}, skip")
+                return
+            _recording_active.add(key)
+            await send_notification(
+                f"🔴 <b>LIVE DÉTECTÉ !</b>\n"
+                f"👤 {label}\n"
+                f"🎬 Recording lancé instantanément..."
+            )
+            await record_stream(
+                stream_url=stream_url,
+                platform=platform,
+                username=username,
+                on_complete=lambda fp: on_recording_complete(fp, label),
+            )
             _recording_active.discard(key)
 
-        await asyncio.sleep(POLL_INTERVAL_SEC)
+        await tiktok_monitor.watch_and_notify(username, on_live_start)
+
+    elif platform == "instagram":
+        # ── Polling 60s (pas de websocket public pour insta) ──────────────
+        while True:
+            try:
+                if key not in _recording_active:
+                    is_live, stream_url = insta_monitor.is_live(
+                        username, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD
+                    )
+                    if is_live and stream_url:
+                        log.info(f"[Monitor] 🔴 LIVE DÉTECTÉ : {label}")
+                        _recording_active.add(key)
+                        await send_notification(
+                            f"🔴 <b>LIVE DÉTECTÉ !</b>\n"
+                            f"👤 {label}\n"
+                            f"🎬 Recording lancé..."
+                        )
+                        await record_stream(
+                            stream_url=stream_url,
+                            platform=platform,
+                            username=username,
+                            on_complete=lambda fp: on_recording_complete(fp, label),
+                        )
+                        _recording_active.discard(key)
+                    else:
+                        log.debug(f"[Monitor] 💤 {label} — pas en live")
+            except Exception as e:
+                log.error(f"[Monitor] ❌ Erreur pour {label}: {e}", exc_info=True)
+                _recording_active.discard(key)
+
+            await asyncio.sleep(POLL_INTERVAL_SEC)
 
 
 async def main() -> None:
