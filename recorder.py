@@ -121,17 +121,25 @@ async def record_stream(
         )
         await remux_proc.wait()
         
-        # Supprime le .ts brut
-        try:
-            raw_path.unlink()
-        except:
-            pass
-
-        if output_path.exists():
+        if output_path.exists() and output_path.stat().st_size > 1024:
+            # Remux a réussi et le fichier n'est pas vide (>1KB)
+            try:
+                raw_path.unlink()
+            except:
+                pass
             size_mb = output_path.stat().st_size / 1024 / 1024
             log.info(f"[Recorder] ✅ Recording terminé & propre : {output_path} ({size_mb:.1f}MB)")
             await on_complete(str(output_path))
         else:
-            log.warning(f"[Recorder] ⚠️ Echec du remuxing : {output_path}")
+            # Remux a échoué (souvent à cause d'un flux corrompu) - on envoie le raw
+            log.warning(f"[Recorder] ⚠️ Echec du remuxing ffmpeg, fallback sur le fichier brut")
+            if output_path.exists():
+                try:
+                    output_path.unlink()
+                except:
+                    pass
+            size_mb = raw_path.stat().st_size / 1024 / 1024
+            log.info(f"[Recorder] ✅ Recording terminé (BRUT) : {raw_path} ({size_mb:.1f}MB)")
+            await on_complete(str(raw_path))
     else:
         log.warning(f"[Recorder] 👻 Fichier vide ou absent : {raw_path}")
