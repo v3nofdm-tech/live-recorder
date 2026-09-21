@@ -11,16 +11,17 @@ TELEGRAM_CHANNEL   = os.getenv("TELEGRAM_CHANNEL", "@livev3No")  # ou le chat_id
 # ─── TARGETS ─────────────────────────────────────────────────────────────────
 # Ajoute autant d'entrées que tu veux ici, c'est tout !
 TARGETS = [
-    {
-        "platform":  "tiktok",
-        "username":  "sosamann777",
-        "label":     "🎵 sosamann777 (TikTok)",
-    },
-    {
-        "platform":  "instagram",
-        "username":  "sosamann777",
-        "label":     "📸 sosamann777 (Instagram)",
-    },
+    # TikTok
+    {"platform": "tiktok", "username": "sosamann777", "label": "🎵 sosamann777 (TikTok)"},
+    {"platform": "tiktok", "username": "keeqaid0", "label": "🎵 keeqaid0 (TikTok)"},
+    {"platform": "tiktok", "username": "xyy1itee", "label": "🎵 xyy1itee (TikTok)"},
+    # Instagram
+    {"platform": "instagram", "username": "sosamann777", "label": "📸 sosamann777 (Instagram)"},
+    {"platform": "instagram", "username": "keeqaid", "label": "📸 keeqaid (Instagram)"},
+    {"platform": "instagram", "username": "beewaba", "label": "📸 beewaba (Instagram)"},
+    {"platform": "instagram", "username": "sakigagnoa", "label": "📸 sakigagnoa (Instagram)"},
+    {"platform": "instagram", "username": "63wog", "label": "📸 63wog (Instagram)"},
+    {"platform": "instagram", "username": "63kluf", "label": "📸 63kluf (Instagram)"},
 ]
 
 # ─── INSTAGRAM CREDS (à remplir plus tard) ───────────────────────────────────
