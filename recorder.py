@@ -69,7 +69,8 @@ async def record_stream(
     """
     key         = f"{platform}:{username}"
     output_path = _make_output_path(platform, username)
-    log.info(f"[Recorder] 🎬 Début recording {platform}/@{username} → {output_path}")
+    raw_path = output_path.with_suffix(".ts")
+    log.info(f"[Recorder] 🔴 Début recording {platform}/@{username} -> {raw_path}")
 
     cmd = [
         "streamlink",
@@ -77,7 +78,7 @@ async def record_stream(
         "--retry-max",    "999",
         "--retry-open",   "10",
         "--hls-live-restart",
-        "--output", str(output_path),
+        "--output", str(raw_path),
         stream_url,
         STREAMLINK_QUALITY,
     ]
@@ -103,9 +104,34 @@ async def record_stream(
     finally:
         _active_procs.pop(key, None)
 
-    if output_path.exists() and output_path.stat().st_size > 0:
-        size_mb = output_path.stat().st_size / 1024 / 1024
-        log.info(f"[Recorder] ✅ Recording terminé : {output_path} ({size_mb:.1f}MB)")
-        await on_complete(str(output_path))
+    if raw_path.exists() and raw_path.stat().st_size > 0:
+        log.info(f"[Recorder] 🔧 Remuxing en MP4 propre pour VLC/Telegram...")
+        # Remux propre pour corriger l'entête MP4 et le codec
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",
+            "-i", str(raw_path),
+            "-c", "copy",
+            "-movflags", "faststart",
+            str(output_path)
+        ]
+        remux_proc = await asyncio.create_subprocess_exec(
+            *ffmpeg_cmd,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL
+        )
+        await remux_proc.wait()
+        
+        # Supprime le .ts brut
+        try:
+            raw_path.unlink()
+        except:
+            pass
+
+        if output_path.exists():
+            size_mb = output_path.stat().st_size / 1024 / 1024
+            log.info(f"[Recorder] ✅ Recording terminé & propre : {output_path} ({size_mb:.1f}MB)")
+            await on_complete(str(output_path))
+        else:
+            log.warning(f"[Recorder] ⚠️ Echec du remuxing : {output_path}")
     else:
-        log.warning(f"[Recorder] ⚠️ Fichier vide ou absent : {output_path}")
+        log.warning(f"[Recorder] 👻 Fichier vide ou absent : {raw_path}")
